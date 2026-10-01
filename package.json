@@ -1,0 +1,25 @@
+{
+  "name": "photocop-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PhotoCop - AI-Native Professional Image Editor & Programmable Graphics Engine",
+  "scripts": {
+    "dev": "npm --prefix photocop run dev",
+    "build": "npm --prefix photocop run build",
+    "lint": "npm --prefix photocop run lint",
+    "preview": "npm --prefix photocop run preview"
+  },
+  "keywords": [
+    "image-editor",
+    "mcp",
+    "model-context-protocol",
+    "canvas",
+    "graphics-engine",
+    "photoshop-alternative",
+    "react",
+    "typescript",
+    "ai-agent"
+  ],
+  "author": "Hunain Ahmed",
+  "license": "MIT"
+}
