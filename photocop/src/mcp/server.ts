@@ -405,7 +405,7 @@ type StoreGetter = () => {
 
 export class PhotocopMcpServer {
   private getStore: StoreGetter;
-  private wsServer: WebSocket | null = null;
+
 
   constructor(getStore: StoreGetter) {
     this.getStore = getStore;

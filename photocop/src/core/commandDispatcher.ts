@@ -8,7 +8,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import type { EditorCommand } from './commands';
-import type { Document, Layer, Selection, HistoryEntry } from './types';
+import type { Document, Layer, Selection, HistoryEntry, CommandResult } from './types';
 import {
   createDocument, addLayer, removeLayer, updateLayer,
   reorderLayer, duplicateLayer, createAdjustmentLayer,

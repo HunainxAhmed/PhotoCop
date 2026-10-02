@@ -7,8 +7,8 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Send, Settings, ChevronDown, Loader2, RotateCcw, AlertCircle } from 'lucide-react';
-import { useEditorStore } from '../store/editorStore';
+import { Bot, Send, Settings, Loader2, AlertCircle } from 'lucide-react';
+import { useEditorStore, type PhotocopStore } from '../store/editorStore';
 import type { AiProviderConfig } from '../core/types';
 import { compositeDocument } from '../core/compositor';
 
@@ -60,11 +60,11 @@ const DEFAULT_PROVIDERS: AiProviderConfig[] = [
 
 // ─── Document Context Builder ─────────────────────────────────────────────────
 
-function buildDocumentContext(store: ReturnType<typeof useEditorStore>): string {
+function buildDocumentContext(store: PhotocopStore): string {
   const doc = store.document;
   if (!doc) return 'No document is currently open.';
 
-  const layers = doc.layerOrder.map((id, idx) => {
+  const layers = doc.layerOrder.map((id: string, idx: number) => {
     const layer = doc.layers[id];
     return `  ${idx + 1}. [${layer.type}] "${layer.name}" — opacity: ${layer.opacity}%, blend: ${layer.blendMode}, visible: ${layer.visible}${layer.mask ? ', has mask' : ''}${layer.adjustment ? `, adjustment: ${layer.adjustment.type}` : ''}`;
   }).join('\n');
@@ -84,7 +84,7 @@ History: ${store.history.length} steps`;
 }
 
 /** Generate a small preview of the document as base64 */
-function generateDocumentPreview(store: ReturnType<typeof useEditorStore>): string | null {
+function generateDocumentPreview(store: PhotocopStore): string | null {
   const doc = store.document;
   if (!doc) return null;
   try {

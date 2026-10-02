@@ -7,7 +7,7 @@
  * renderVersion changes (dirty flag from store).
  */
 
-import React, { useRef, useEffect, useCallback, useState } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { useEditorStore } from '../store/editorStore';
 import { compositeDocument } from '../core/compositor';
 import type { Point, Rect } from '../core/types';
@@ -39,12 +39,15 @@ export const Canvas: React.FC<CanvasProps> = ({ width, height }) => {
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const lastRenderVersion = useRef(-1);
-  const animFrameRef = useRef<number>(0);
 
   // Stroke state
   const isDrawing = useRef(false);
   const strokePoints = useRef<Point[]>([]);
   const lastPt = useRef<Point | null>(null);
+
+  // Performance tracking (refs only — never setState in RAF)
+  const lastRenderMs = useRef(0);
+  const renderCount = useRef(0);
 
   // Pan state
   const isPanning = useRef(false);
@@ -61,17 +64,15 @@ export const Canvas: React.FC<CanvasProps> = ({ width, height }) => {
   const cropStart = useRef<Point>({ x: 0, y: 0 });
   const cropRect = useRef<Rect | null>(null);
 
-  const store = useEditorStore();
-  const {
-    document: doc,
-    viewport,
-    tool,
-    brushSettings,
-    foreground,
-    selection,
-    dispatch,
-    invalidateRender,
-  } = store;
+  const doc        = useEditorStore(s => s.document);
+  const viewport   = useEditorStore(s => s.viewport);
+  const tool       = useEditorStore(s => s.tool);
+  const brushSettings = useEditorStore(s => s.brushSettings);
+  const foreground = useEditorStore(s => s.foreground);
+  const selection  = useEditorStore(s => s.selection);
+  const dispatch   = useEditorStore(s => s.dispatch);
+  const invalidateRender = useEditorStore(s => s.invalidateRender);
+  const renderVersion = useEditorStore(s => s.renderVersion);
 
   // ─── Composite loop ────────────────────────────────────────────────────────
 
@@ -116,13 +117,10 @@ export const Canvas: React.FC<CanvasProps> = ({ width, height }) => {
     ctx.strokeRect(0, 0, doc.width * viewport.zoom, doc.height * viewport.zoom);
     ctx.restore();
 
-    useEditorStore.setState(prev => ({
-      metrics: {
-        ...prev.metrics,
-        lastRenderMs: performance.now() - t0,
-        renderCount: prev.metrics.renderCount + 1,
-      },
-    }));
+    // Track render time via ref — never setState inside RAF
+    const elapsed = performance.now() - t0;
+    lastRenderMs.current = elapsed;
+    renderCount.current += 1;
   }, [doc, viewport, width, height]);
 
   // ─── Overlay (selection, crop, brush cursor) ───────────────────────────────
@@ -365,7 +363,7 @@ export const Canvas: React.FC<CanvasProps> = ({ width, height }) => {
     }
   }, [doc, tool, viewport, brushSettings, foreground, dispatch, invalidateRender, getDocPt, getScreenPt]);
 
-  const onMouseUp = useCallback((e: React.MouseEvent) => {
+  const onMouseUp = useCallback((_e: React.MouseEvent) => {
     if (!doc) return;
     const activeTool = tool.activeTool;
 

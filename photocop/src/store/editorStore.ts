@@ -13,9 +13,8 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import type { EditorCommand } from '../core/commands';
-import type { Document, Selection, HistoryEntry, ToolId, BrushSettings, ToolState } from '../core/types';
-import { handleCommand, type EditorState, type StateMutation } from '../core/commandDispatcher';
-import type { CommandResult } from '../core/types';
+import type { ToolId, BrushSettings, ToolState, CommandResult } from '../core/types';
+import { handleCommand, type EditorState } from '../core/commandDispatcher';
 import { compositeDocument } from '../core/compositor';
 
 // ─── Store Interface ──────────────────────────────────────────────────────────

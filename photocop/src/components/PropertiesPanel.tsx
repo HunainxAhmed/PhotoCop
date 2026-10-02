@@ -12,7 +12,6 @@
 import React, { useState } from 'react';
 import { useEditorStore } from '../store/editorStore';
 import type { BrushSettings, Layer, CurvePoint, CurvesData } from '../core/types';
-import { BLEND_MODES_LIST } from '../core/blendModes';
 
 // ─── Brush Controls ───────────────────────────────────────────────────────────
 

@@ -7,7 +7,7 @@
  * operations can be moved to a Worker without API changes.
  */
 
-import type { Document, Layer, BlendMode, Color } from './types';
+import type { Document, Layer, BlendMode } from './types';
 import { getFlatLayerOrder } from './document';
 
 // ─── Blend Functions ──────────────────────────────────────────────────────────
@@ -271,7 +271,7 @@ export function compositeDocument(
 }
 
 function renderLayer(
-  doc: Document,
+  _doc: Document,
   layer: Layer,
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   docWidth: number,

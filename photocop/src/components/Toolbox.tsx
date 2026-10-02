@@ -9,7 +9,7 @@ import React from 'react';
 import {
   Move, Crop, Pipette, Pencil, Eraser, Paintbrush,
   Wand2, Type, Triangle, Square, Circle,
-  Hand, ZoomIn, RotateCcw, Download, Scissors,
+  Hand, ZoomIn, RotateCcw, Scissors,
   MousePointer2, Blend, Layers
 } from 'lucide-react';
 import { useEditorStore } from '../store/editorStore';

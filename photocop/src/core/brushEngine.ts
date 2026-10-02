@@ -103,12 +103,11 @@ export function paintStroke(opts: PaintStrokeOptions): void {
     if (dist === 0) continue;
 
     distAccum += dist;
-    let stepsLeft = distAccum / spacing;
+    const stepsLeft = distAccum / spacing;
     distAccum = distAccum % spacing;
 
     const nx = dx / dist;
     const ny = dy / dist;
-    let t = spacing - (distAccum + spacing - (stepsLeft * spacing)) / stepsLeft;
 
     for (let s = 0; s < stepsLeft; s++) {
       const px = prev.x + nx * (s * spacing);
