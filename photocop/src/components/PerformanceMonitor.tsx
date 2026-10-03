@@ -9,11 +9,9 @@ import { useEditorStore } from '../store/editorStore';
 
 export const PerformanceMonitor: React.FC = () => {
   const [open, setOpen] = useState(false);
-  const { metrics, viewport, document: doc } = useEditorStore(s => ({
-    metrics: s.metrics,
-    viewport: s.viewport,
-    document: s.document,
-  }));
+  const metrics = useEditorStore(s => s.metrics);
+  const viewport = useEditorStore(s => s.viewport);
+  const doc = useEditorStore(s => s.document);
 
   return (
     <div className="absolute bottom-6 right-3 z-50">

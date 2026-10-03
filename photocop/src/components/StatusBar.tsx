@@ -6,13 +6,11 @@ import React from 'react';
 import { useEditorStore } from '../store/editorStore';
 
 export const StatusBar: React.FC = () => {
-  const { doc, selection, viewport, tool, foreground } = useEditorStore(s => ({
-    doc: s.document,
-    selection: s.selection,
-    viewport: s.viewport,
-    tool: s.tool,
-    foreground: s.foreground,
-  }));
+  const doc = useEditorStore(s => s.document);
+  const selection = useEditorStore(s => s.selection);
+  const viewport = useEditorStore(s => s.viewport);
+  const activeTool = useEditorStore(s => s.tool.activeTool);
+  const foreground = useEditorStore(s => s.foreground);
 
   const fg = `rgb(${foreground.r},${foreground.g},${foreground.b})`;
 
@@ -21,7 +19,7 @@ export const StatusBar: React.FC = () => {
       text-[11px] text-neutral-500 shrink-0">
 
       {/* Tool */}
-      <span className="capitalize">{tool.activeTool}</span>
+      <span className="capitalize">{activeTool}</span>
 
       {/* Document size */}
       {doc && (

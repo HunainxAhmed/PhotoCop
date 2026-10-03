@@ -265,10 +265,8 @@ const LayerRow: React.FC<LayerRowProps> = ({ layer, isActive, depth, onSelect })
 // ─── Layers Panel ─────────────────────────────────────────────────────────────
 
 export const LayersPanel: React.FC = () => {
-  const { document: doc, dispatch } = useEditorStore(s => ({
-    document: s.document,
-    dispatch: s.dispatch,
-  }));
+  const doc = useEditorStore(s => s.document);
+  const dispatch = useEditorStore(s => s.dispatch);
 
   if (!doc) {
     return (

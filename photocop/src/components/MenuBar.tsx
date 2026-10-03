@@ -68,7 +68,10 @@ const MenuDropdown: React.FC<{
 export const MenuBar: React.FC = () => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
-  const store = useEditorStore();
+  const doc = useEditorStore(s => s.document);
+  const historyIndex = useEditorStore(s => s.historyIndex);
+  const historyLength = useEditorStore(s => s.history.length);
+  const hasSelection = useEditorStore(s => Boolean(s.selection.bounds));
 
   // Close on outside click
   useEffect(() => {
@@ -81,8 +84,9 @@ export const MenuBar: React.FC = () => {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const hasDoc = !!store.document;
-  const activeLayerId = store.document?.activeLayerId ?? null;
+  const hasDoc = !!doc;
+  const activeLayerId = doc?.activeLayerId ?? null;
+  const store = useEditorStore.getState();
 
   const MENUS: MenuDef[] = [
     {
@@ -146,13 +150,13 @@ export const MenuBar: React.FC = () => {
         {
           label: 'Undo',
           shortcut: 'Ctrl+Z',
-          disabled: !hasDoc || store.historyIndex <= 0,
+          disabled: !hasDoc || historyIndex <= 0,
           action: () => store.dispatch({ type: 'history.undo', source: 'user' }),
         },
         {
           label: 'Redo',
           shortcut: 'Ctrl+Shift+Z',
-          disabled: !hasDoc || store.historyIndex >= store.history.length - 1,
+          disabled: !hasDoc || historyIndex >= historyLength - 1,
           action: () => store.dispatch({ type: 'history.redo', source: 'user' }),
         },
         { separator: true },
@@ -165,7 +169,7 @@ export const MenuBar: React.FC = () => {
         {
           label: 'Deselect',
           shortcut: 'Ctrl+D',
-          disabled: !hasDoc || !store.selection.bounds,
+          disabled: !hasDoc || !hasSelection,
           action: () => store.dispatch({ type: 'selection.deselect', source: 'user' }),
         },
         {

@@ -72,7 +72,6 @@ export const Canvas: React.FC<CanvasProps> = ({ width, height }) => {
   const selection  = useEditorStore(s => s.selection);
   const dispatch   = useEditorStore(s => s.dispatch);
   const invalidateRender = useEditorStore(s => s.invalidateRender);
-  const renderVersion = useEditorStore(s => s.renderVersion);
 
   // ─── Composite loop ────────────────────────────────────────────────────────
 

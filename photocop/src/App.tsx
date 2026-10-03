@@ -160,7 +160,8 @@ export default function App() {
   const [showNewDoc, setShowNewDoc] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
   const canvasContainerRef = useRef<HTMLDivElement>(null);
-  const store = useEditorStore();
+  const hasDoc = useEditorStore(s => Boolean(s.document));
+  const loadImageFromFile = useEditorStore(s => s.loadImageFromFile);
 
   // ─── Canvas resize observer ──────────────────────────────────────────────────
 
@@ -186,14 +187,15 @@ export default function App() {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
     if (file && file.type.startsWith('image/')) {
-      await store.loadImageFromFile(file);
+      await loadImageFromFile(file);
     }
-  }, [store]);
+  }, [loadImageFromFile]);
 
   // ─── Global keyboard shortcuts ───────────────────────────────────────────────
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      const store = useEditorStore.getState();
       const ctrl = e.ctrlKey || e.metaKey;
       const tag = (e.target as HTMLElement).tagName;
 
@@ -279,7 +281,7 @@ export default function App() {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [store]);
+  }, []);
 
   return (
     <div
@@ -311,7 +313,7 @@ export default function App() {
           <PerformanceMonitor />
 
           {/* New doc CTA when empty */}
-          {!store.document && (
+          {!hasDoc && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="text-center pointer-events-auto">
                 <div className="text-6xl mb-4">⚡</div>
@@ -332,7 +334,7 @@ export default function App() {
                       input.accept = 'image/*';
                       input.onchange = async (e) => {
                         const file = (e.target as HTMLInputElement).files?.[0];
-                        if (file) await store.loadImageFromFile(file);
+                        if (file) await loadImageFromFile(file);
                       };
                       input.click();
                     }}

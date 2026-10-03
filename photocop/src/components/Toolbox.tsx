@@ -90,10 +90,8 @@ const TOOL_GROUPS: ToolGroup[] = [
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const Toolbox: React.FC = () => {
-  const { activeTool, setTool } = useEditorStore(s => ({
-    activeTool: s.tool.activeTool,
-    setTool: s.setTool,
-  }));
+  const activeTool = useEditorStore(s => s.tool.activeTool);
+  const setTool = useEditorStore(s => s.setTool);
 
   return (
     <div className="flex flex-col h-full bg-neutral-850 border-r border-neutral-700 w-12 py-2 overflow-y-auto overflow-x-hidden">
@@ -143,11 +141,9 @@ const ToolButton: React.FC<ToolButtonProps> = ({ tool, active, onClick }) => (
 // ─── Color Swatches ───────────────────────────────────────────────────────────
 
 export const ColorSwatches: React.FC = () => {
-  const { foreground, background, dispatch } = useEditorStore(s => ({
-    foreground: s.foreground,
-    background: s.background,
-    dispatch: s.dispatch,
-  }));
+  const foreground = useEditorStore(s => s.foreground);
+  const background = useEditorStore(s => s.background);
+  const dispatch = useEditorStore(s => s.dispatch);
 
   const fg = `rgb(${foreground.r},${foreground.g},${foreground.b})`;
   const bg = `rgb(${background.r},${background.g},${background.b})`;

@@ -300,7 +300,7 @@ export const AIPanel: React.FC = () => {
   const [provider, setProvider] = useState<AiProviderConfig>(DEFAULT_PROVIDERS[0]);
   const [apiKey, setApiKey] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const store = useEditorStore();
+  const hasDoc = useEditorStore(s => Boolean(s.document));
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -317,7 +317,7 @@ export const AIPanel: React.FC = () => {
         const commands = JSON.parse(json);
         const arr = Array.isArray(commands) ? commands : [commands];
         for (const cmd of arr) {
-          const result = store.dispatch({ ...cmd, source: 'ai' });
+          const result = useEditorStore.getState().dispatch({ ...cmd, source: 'ai' });
           if (result.success) {
             executed.push(`✓ ${cmd.type}`);
           } else {
@@ -346,8 +346,8 @@ export const AIPanel: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const docContext = buildDocumentContext(store);
-      const preview = generateDocumentPreview(store);
+      const docContext = buildDocumentContext(useEditorStore.getState());
+      const preview = generateDocumentPreview(useEditorStore.getState());
       const contextualSystemPrompt = `${SYSTEM_PROMPT}\n\nCurrent Document State:\n${docContext}`;
 
       const historyMessages = messages
@@ -441,13 +441,13 @@ export const AIPanel: React.FC = () => {
         )}
 
         {/* Quick actions when no doc or conversation empty */}
-        {messages.length <= 1 && !store.document && (
+        {messages.length <= 1 && !hasDoc && (
           <div className="text-[11px] text-neutral-600 text-center py-2">
             Open a document first to start editing with AI
           </div>
         )}
 
-        {messages.length <= 1 && store.document && (
+        {messages.length <= 1 && hasDoc && (
           <div className="space-y-1">
             <div className="text-[10px] text-neutral-600 mb-1.5">Quick actions:</div>
             {quickActions.map(action => (

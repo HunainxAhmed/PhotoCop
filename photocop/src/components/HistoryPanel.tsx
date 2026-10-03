@@ -23,11 +23,9 @@ function formatTime(ts: number): string {
 }
 
 export const HistoryPanel: React.FC = () => {
-  const { history, historyIndex, dispatch } = useEditorStore(s => ({
-    history: s.history,
-    historyIndex: s.historyIndex,
-    dispatch: s.dispatch,
-  }));
+  const history = useEditorStore(s => s.history);
+  const historyIndex = useEditorStore(s => s.historyIndex);
+  const dispatch = useEditorStore(s => s.dispatch);
 
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;

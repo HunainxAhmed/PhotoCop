@@ -16,10 +16,8 @@ import type { BrushSettings, Layer, CurvePoint, CurvesData } from '../core/types
 // ─── Brush Controls ───────────────────────────────────────────────────────────
 
 const BrushControls: React.FC = () => {
-  const { brushSettings, setBrushSettings } = useEditorStore(s => ({
-    brushSettings: s.brushSettings,
-    setBrushSettings: s.setBrushSettings,
-  }));
+  const brushSettings = useEditorStore(s => s.brushSettings);
+  const setBrushSettings = useEditorStore(s => s.setBrushSettings);
 
   const slider = (
     label: string,
@@ -352,11 +350,9 @@ const LayerTransformControls: React.FC<{ layer: Layer }> = ({ layer }) => {
 // ─── Main Properties Panel ────────────────────────────────────────────────────
 
 export const PropertiesPanel: React.FC = () => {
-  const { activeTool, activeLayer, doc } = useEditorStore(s => ({
-    activeTool: s.tool.activeTool,
-    activeLayer: s.document?.layers[s.document?.activeLayerId ?? ''] ?? null,
-    doc: s.document,
-  }));
+  const activeTool = useEditorStore(s => s.tool.activeTool);
+  const doc = useEditorStore(s => s.document);
+  const activeLayer = doc?.layers[doc?.activeLayerId ?? ''] ?? null;
 
   const paintingTools = ['brush', 'pencil', 'eraser', 'clone', 'healing', 'dodge', 'burn', 'blur', 'sharpen'];
 
