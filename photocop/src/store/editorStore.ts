@@ -16,6 +16,8 @@ import type { EditorCommand } from '../core/commands';
 import type { ToolId, BrushSettings, ToolState, CommandResult } from '../core/types';
 import { handleCommand, type EditorState } from '../core/commandDispatcher';
 import { compositeDocument } from '../core/compositor';
+import { scheduleSaveDocument, loadDocumentFromStorage } from '../core/storage';
+import type { AdjustmentTab } from '../components/AdjustmentsModal';
 
 // ─── Store Interface ──────────────────────────────────────────────────────────
 
@@ -34,6 +36,14 @@ export interface PhotocopStore extends EditorState {
 
   // Render invalidation
   renderVersion: number;
+
+  // Adjustments Modal
+  activeAdjustmentModal: AdjustmentTab | null;
+  openAdjustmentModal: (tab?: AdjustmentTab) => void;
+  closeAdjustmentModal: () => void;
+
+  // Project persistence
+  initProjectStorage: () => Promise<void>;
 
   // Actions
   dispatch: (cmd: EditorCommand) => CommandResult;
@@ -93,6 +103,30 @@ export const useEditorStore = create<PhotocopStore>()(
 
     renderVersion: 0,
 
+    activeAdjustmentModal: null,
+    openAdjustmentModal: (tab: AdjustmentTab = 'hueSat') => set({ activeAdjustmentModal: tab }),
+    closeAdjustmentModal: () => set({ activeAdjustmentModal: null }),
+
+    initProjectStorage: async () => {
+      try {
+        const saved = await loadDocumentFromStorage();
+        if (saved) {
+          set({
+            document: saved,
+            history: [],
+            historyIndex: -1,
+            renderVersion: get().renderVersion + 1,
+          });
+          const container = document.getElementById('canvas-container');
+          if (container) {
+            get().fitToWindow(container.clientWidth, container.clientHeight);
+          }
+        }
+      } catch {
+        // Non-fatal
+      }
+    },
+
     // ─── Core dispatch ────────────────────────────────────────────────────────
 
     dispatch: (cmd: EditorCommand): CommandResult => {
@@ -101,15 +135,21 @@ export const useEditorStore = create<PhotocopStore>()(
       const { mutation, result } = handleCommand(state, cmd);
 
       if (result.success && Object.keys(mutation).length > 0) {
-        set((prev) => ({
-          ...prev,
-          ...(mutation as Partial<PhotocopStore>),
-          renderVersion: prev.renderVersion + 1,
-          metrics: {
-            ...prev.metrics,
-            lastCommandMs: performance.now() - t0,
-          },
-        }));
+        set((prev) => {
+          const next = {
+            ...prev,
+            ...(mutation as Partial<PhotocopStore>),
+            renderVersion: prev.renderVersion + 1,
+            metrics: {
+              ...prev.metrics,
+              lastCommandMs: performance.now() - t0,
+            },
+          };
+          if ('document' in mutation) {
+            scheduleSaveDocument(next.document);
+          }
+          return next;
+        });
       }
 
       return result;
@@ -169,8 +209,41 @@ export const useEditorStore = create<PhotocopStore>()(
             ctx.drawImage(img, 0, 0);
             const imageData = ctx.getImageData(0, 0, img.width, img.height);
 
-            // Create a new document with this image
             const store = get();
+            const currentDoc = store.document;
+
+            if (currentDoc) {
+              // Existing document open: add as a NEW LAYER on top!
+              const layerName = file.name.replace(/\.[^.]+$/, '');
+              store.dispatch({
+                type: 'layer.create',
+                layerType: 'pixel',
+                name: layerName,
+                width: currentDoc.width,
+                height: currentDoc.height,
+                source: 'user',
+              });
+
+              const afterCreate = get();
+              const newLayerId = afterCreate.document?.activeLayerId;
+              if (newLayerId) {
+                const posX = Math.round((currentDoc.width - img.width) / 2);
+                const posY = Math.round((currentDoc.height - img.height) / 2);
+                afterCreate.dispatch({
+                  type: 'pixel.paste',
+                  layerId: newLayerId,
+                  imageData,
+                  x: posX,
+                  y: posY,
+                  source: 'user',
+                  description: `Import ${file.name}`,
+                });
+              }
+              resolve();
+              return;
+            }
+
+            // No document open: create new document with this image
             store.dispatch({
               type: 'document.create',
               width: img.width,

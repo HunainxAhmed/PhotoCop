@@ -56,6 +56,26 @@ const DEFAULT_PROVIDERS: AiProviderConfig[] = [
     temperature: 0.7,
     enabled: true,
   },
+  {
+    id: 'gemini-flash',
+    name: 'Google Gemini 2.0 Flash',
+    type: 'google',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    model: 'gemini-2.0-flash',
+    maxTokens: 8192,
+    temperature: 0.7,
+    enabled: true,
+  },
+  {
+    id: 'gemini-pro',
+    name: 'Google Gemini 1.5 Pro',
+    type: 'google',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    model: 'gemini-1.5-pro',
+    maxTokens: 8192,
+    temperature: 0.7,
+    enabled: true,
+  },
 ];
 
 // ─── Document Context Builder ─────────────────────────────────────────────────
@@ -184,7 +204,74 @@ async function callAI(
     return data.content?.[0]?.text ?? '';
   }
 
+  if (provider.type === 'google') {
+    // Google Gemini API — uses its own REST format
+    if (!apiKey) throw new Error('Gemini requires an API key. Get one free at https://aistudio.google.com/');
+    const apiUrl = `${provider.baseUrl}/models/${provider.model}:generateContent?key=${apiKey}`;
+
+    // Convert to Gemini content format (user/model roles only)
+    const filtered = messages.filter(m => m.role === 'user' || m.role === 'assistant');
+    const geminiContents = filtered.map((m, idx) => {
+      const parts: unknown[] = [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }];
+      // Attach image to the last user message
+      if (idx === filtered.length - 1 && m.role === 'user' && preview) {
+        parts.push({ inlineData: { mimeType: 'image/jpeg', data: preview } });
+      }
+      return { role: m.role === 'assistant' ? 'model' : 'user', parts };
+    });
+
+    const resp = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents: geminiContents,
+        generationConfig: {
+          maxOutputTokens: provider.maxTokens,
+          temperature: provider.temperature,
+        },
+      }),
+    });
+
+    if (!resp.ok) {
+      let errorMsg = `Gemini API error ${resp.status}`;
+      try {
+        const errJson = await resp.json();
+        if (errJson.error?.message) {
+          errorMsg = `Gemini error (${resp.status}): ${errJson.error.message}`;
+        }
+      } catch {
+        const err = await resp.text();
+        errorMsg = `Gemini error (${resp.status}): ${err}`;
+      }
+      throw new Error(errorMsg);
+    }
+
+    const data = await resp.json();
+    if (!data.candidates || data.candidates.length === 0) {
+      if (data.promptFeedback?.blockReason) {
+        throw new Error(`Gemini blocked content: ${data.promptFeedback.blockReason}`);
+      }
+      throw new Error('Gemini returned no response candidates');
+    }
+
+    const candidateParts = data.candidates[0]?.content?.parts;
+    const text = Array.isArray(candidateParts)
+      ? candidateParts.map((p: { text?: string }) => p.text ?? '').filter(Boolean).join('')
+      : '';
+    return text;
+  }
+
   throw new Error(`Provider type "${provider.type}" not yet supported`);
+}
+
+function getApiKeyPlaceholder(providerType: string): string {
+  switch (providerType) {
+    case 'google':    return 'AIza... (get free at aistudio.google.com)';
+    case 'anthropic': return 'sk-ant-...';
+    case 'ollama':    return '(no key needed for local)';
+    default:          return 'sk-...';
+  }
 }
 
 // ─── Provider Settings Modal ──────────────────────────────────────────────────
@@ -226,7 +313,7 @@ const ProviderSettings: React.FC<{
         type="password"
         value={localKey}
         onChange={e => setLocalKey(e.target.value)}
-        placeholder="sk-..."
+        placeholder={getApiKeyPlaceholder(localProvider.type)}
         className="mb-3 bg-neutral-700 border border-neutral-600 rounded px-2 py-1 text-xs text-neutral-200
           focus:outline-none focus:border-blue-500 font-mono"
       />
@@ -278,9 +365,15 @@ Available commands (JSON array format):
 - {"type": "mask.invert", "layerId": "..."}
 - {"type": "selection.select_all"}
 - {"type": "selection.deselect"}
+- {"type": "layer.duplicate", "layerId": "..."}
+- {"type": "layer.merge_down", "layerId": "..."}
+- {"type": "layer.group", "layerIds": ["id1", "id2"], "groupName": "..."}
+- {"type": "layer.ungroup", "groupLayerId": "..."}
+- {"type": "layer.set_clipping_mask", "layerId": "...", "clippingMask": true|false}
 - {"type": "layer.delete", "layerId": "..."}
 - {"type": "layer.rename", "layerId": "...", "name": "..."}
 - {"type": "pixel.fill", "layerId": "...", "color": {"r": 0, "g": 0, "b": 0, "a": 255}}
+- {"type": "text.create", "position": {"x": 50, "y": 50}, "textData": {"content": "...", "style": {"fontFamily": "Inter", "fontSize": 36, "color": {"r": 0, "g": 0, "b": 0, "a": 255}}}}
 
 Always explain what you're doing and why. Be specific about the visual effect you're creating.
 When commands are not needed (questions, analysis), respond conversationally without command blocks.`;
@@ -291,16 +384,39 @@ export const AIPanel: React.FC = () => {
       id: 'welcome',
       role: 'assistant',
       content: 'Hello! I\'m your AI editing assistant. I can analyze your document, suggest edits, and execute adjustments directly. What would you like to achieve?',
-      timestamp: Date.now(),
+      timestamp: 0,
     },
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [provider, setProvider] = useState<AiProviderConfig>(DEFAULT_PROVIDERS[0]);
-  const [apiKey, setApiKey] = useState('');
+  const [provider, setProvider] = useState<AiProviderConfig>(() => {
+    try {
+      const saved = localStorage.getItem('photocop_ai_provider');
+      if (saved) {
+        const parsed = JSON.parse(saved) as AiProviderConfig;
+        // Ensure it's still in our provider list (model may have been updated)
+        const found = DEFAULT_PROVIDERS.find(p => p.id === parsed.id);
+        return found ?? parsed;
+      }
+    } catch { /* ignore */ }
+    return DEFAULT_PROVIDERS[0];
+  });
+  const [apiKey, setApiKey] = useState<string>(() => {
+    return localStorage.getItem('photocop_ai_key') ?? '';
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const hasDoc = useEditorStore(s => Boolean(s.document));
+
+  // Persist provider and key to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('photocop_ai_provider', JSON.stringify(provider));
+  }, [provider]);
+
+  useEffect(() => {
+    if (apiKey) localStorage.setItem('photocop_ai_key', apiKey);
+    else localStorage.removeItem('photocop_ai_key');
+  }, [apiKey]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -308,15 +424,25 @@ export const AIPanel: React.FC = () => {
 
   const parseAndExecuteCommands = (text: string): string[] => {
     const executed: string[] = [];
-    const matches = text.match(/```commands\n([\s\S]*?)```/g);
+    const matches = text.match(/```(?:commands|json)?\s*\r?\n([\s\S]*?)```/gi);
     if (!matches) return executed;
 
     for (const block of matches) {
-      const json = block.replace(/```commands\n/, '').replace(/```$/, '').trim();
+      let json = block
+        .replace(/^```(?:commands|json)?\s*\r?\n/i, '')
+        .replace(/\r?\n```\s*$/, '')
+        .trim();
+      // Remove trailing commas before closing braces/brackets
+      json = json.replace(/,(\s*[\]}])/g, '$1');
       try {
-        const commands = JSON.parse(json);
-        const arr = Array.isArray(commands) ? commands : [commands];
-        for (const cmd of arr) {
+        const parsed = JSON.parse(json);
+        const commands = Array.isArray(parsed)
+          ? parsed
+          : Array.isArray(parsed?.commands)
+            ? parsed.commands
+            : [parsed];
+        for (const cmd of commands) {
+          if (!cmd || typeof cmd !== 'object' || !cmd.type) continue;
           const result = useEditorStore.getState().dispatch({ ...cmd, source: 'ai' });
           if (result.success) {
             executed.push(`✓ ${cmd.type}`);

@@ -149,29 +149,45 @@ export function createDocument(
 
 export function addLayer(doc: Document, layer: Layer, aboveLayerId?: string | null): Document {
   const newLayers = { ...doc.layers, [layer.id]: layer };
-  const newOrder = [...doc.layerOrder];
+  const targetId = aboveLayerId || doc.activeLayerId;
 
-  if (aboveLayerId) {
-    const idx = newOrder.indexOf(aboveLayerId);
+  if (targetId) {
+    // Check if targetId is inside a group
+    for (const [gid, g] of Object.entries(doc.layers)) {
+      if (g.type === 'group' && g.children?.includes(targetId)) {
+        const cIdx = g.children.indexOf(targetId);
+        const newChildren = [...g.children];
+        newChildren.splice(cIdx, 0, layer.id);
+        newLayers[gid] = { ...g, children: newChildren };
+        return {
+          ...doc,
+          layers: newLayers,
+          activeLayerId: layer.id,
+          metadata: { ...doc.metadata, modifiedAt: new Date().toISOString() },
+        };
+      }
+    }
+
+    const newOrder = [...doc.layerOrder];
+    const idx = newOrder.indexOf(targetId);
     if (idx !== -1) {
       newOrder.splice(idx, 0, layer.id);
     } else {
       newOrder.unshift(layer.id);
     }
-  } else {
-    // Add above active layer, or at top
-    const activeIdx = doc.activeLayerId ? newOrder.indexOf(doc.activeLayerId) : -1;
-    if (activeIdx !== -1) {
-      newOrder.splice(activeIdx, 0, layer.id);
-    } else {
-      newOrder.unshift(layer.id);
-    }
+    return {
+      ...doc,
+      layers: newLayers,
+      layerOrder: newOrder,
+      activeLayerId: layer.id,
+      metadata: { ...doc.metadata, modifiedAt: new Date().toISOString() },
+    };
   }
 
   return {
     ...doc,
     layers: newLayers,
-    layerOrder: newOrder,
+    layerOrder: [layer.id, ...doc.layerOrder],
     activeLayerId: layer.id,
     metadata: { ...doc.metadata, modifiedAt: new Date().toISOString() },
   };
@@ -181,6 +197,16 @@ export function removeLayer(doc: Document, layerId: string): Document {
   const newLayers = { ...doc.layers };
   delete newLayers[layerId];
   const newOrder = doc.layerOrder.filter(id => id !== layerId);
+
+  // Clean up any parent group referencing this deleted child
+  for (const [gid, g] of Object.entries(newLayers)) {
+    if (g.type === 'group' && g.children?.includes(layerId)) {
+      newLayers[gid] = {
+        ...g,
+        children: g.children.filter(id => id !== layerId),
+      };
+    }
+  }
 
   let newActiveId = doc.activeLayerId;
   if (newActiveId === layerId) {
@@ -215,14 +241,34 @@ export function updateLayer(
 }
 
 export function reorderLayer(doc: Document, layerId: string, toIndex: number): Document {
-  const newOrder = doc.layerOrder.filter(id => id !== layerId);
-  const clamped = Math.max(0, Math.min(toIndex, newOrder.length));
-  newOrder.splice(clamped, 0, layerId);
-  return {
-    ...doc,
-    layerOrder: newOrder,
-    metadata: { ...doc.metadata, modifiedAt: new Date().toISOString() },
-  };
+  // If layerId is in root layerOrder
+  if (doc.layerOrder.includes(layerId)) {
+    const newOrder = doc.layerOrder.filter(id => id !== layerId);
+    const clamped = Math.max(0, Math.min(toIndex, newOrder.length));
+    newOrder.splice(clamped, 0, layerId);
+    return {
+      ...doc,
+      layerOrder: newOrder,
+      metadata: { ...doc.metadata, modifiedAt: new Date().toISOString() },
+    };
+  }
+
+  // If layerId is inside a group
+  for (const [gid, group] of Object.entries(doc.layers)) {
+    if (group.type === 'group' && group.children?.includes(layerId)) {
+      const newChildren = group.children.filter(id => id !== layerId);
+      const clamped = Math.max(0, Math.min(toIndex, newChildren.length));
+      newChildren.splice(clamped, 0, layerId);
+      const updatedGroup = { ...group, children: newChildren };
+      return {
+        ...doc,
+        layers: { ...doc.layers, [gid]: updatedGroup },
+        metadata: { ...doc.metadata, modifiedAt: new Date().toISOString() },
+      };
+    }
+  }
+
+  return doc;
 }
 
 export function duplicateLayer(doc: Document, layerId: string): Document {
@@ -246,9 +292,24 @@ export function duplicateLayer(doc: Document, layerId: string): Document {
         }
       : null,
     effects: source.effects.map(e => ({ ...e })),
+    children: source.children ? [...source.children] : undefined,
   };
 
   return addLayer(doc, newLayer, layerId);
+}
+
+/** Complete clone of a Document including all layer snapshots */
+export function cloneDocument(doc: Document): Document {
+  const clonedLayers: Record<string, Layer> = {};
+  for (const [id, layer] of Object.entries(doc.layers)) {
+    clonedLayers[id] = snapshotLayer(layer);
+  }
+  return {
+    ...doc,
+    layers: clonedLayers,
+    layerOrder: [...doc.layerOrder],
+    metadata: { ...doc.metadata },
+  };
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────

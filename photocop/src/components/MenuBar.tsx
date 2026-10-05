@@ -291,19 +291,32 @@ export const MenuBar: React.FC = () => {
           action: () => store.dispatch({ type: 'adjustment.create', adjustment: { type: 'curves', data: { rgb: [], r: [], g: [], b: [] } }, source: 'user' }),
         },
         {
-          label: 'Levels…',
+          label: 'Hue/Saturation…',
+          shortcut: 'Ctrl+U',
           disabled: !hasDoc,
-          action: () => store.dispatch({ type: 'adjustment.create', adjustment: { type: 'levels', data: { inputMin: 0, inputMax: 255, gamma: 1, outputMin: 0, outputMax: 255 } }, source: 'user' }),
+          action: () => store.openAdjustmentModal('hueSat'),
         },
         {
           label: 'Brightness/Contrast…',
           disabled: !hasDoc,
-          action: () => store.dispatch({ type: 'adjustment.create', adjustment: { type: 'brightnessContrast', data: { brightness: 0, contrast: 0 } }, source: 'user' }),
+          action: () => store.openAdjustmentModal('brightContrast'),
         },
         {
-          label: 'Hue/Saturation…',
+          label: 'Color Balance & Grading…',
+          shortcut: 'Ctrl+B',
           disabled: !hasDoc,
-          action: () => store.dispatch({ type: 'adjustment.create', adjustment: { type: 'hueSaturation', data: { hue: 0, saturation: 0, lightness: 0 } }, source: 'user' }),
+          action: () => store.openAdjustmentModal('colorBalance'),
+        },
+        {
+          label: 'Levels…',
+          shortcut: 'Ctrl+L',
+          disabled: !hasDoc,
+          action: () => store.openAdjustmentModal('levels'),
+        },
+        {
+          label: 'Photo Filters & Presets…',
+          disabled: !hasDoc,
+          action: () => store.openAdjustmentModal('presets'),
         },
         { separator: true },
         {

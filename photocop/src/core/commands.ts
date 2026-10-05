@@ -142,6 +142,17 @@ export interface SetClippingMaskCommand extends BaseCommand {
   clippingMask: boolean;
 }
 
+export interface MergeDownCommand extends BaseCommand {
+  type: 'layer.merge_down';
+  layerId: string;
+}
+
+export interface SetLayerLockedCommand extends BaseCommand {
+  type: 'layer.set_locked';
+  layerId: string;
+  locked: boolean;
+}
+
 // ─── Pixel Commands ───────────────────────────────────────────────────────────
 
 export interface PaintStrokeCommand extends BaseCommand {
@@ -151,6 +162,7 @@ export interface PaintStrokeCommand extends BaseCommand {
   brushSettings: BrushSettings;
   color: Color;
   eraseMode: boolean;
+  toolMode?: 'brush' | 'pencil' | 'eraser' | 'blur' | 'sharpen' | 'dodge' | 'burn' | 'sponge';
 }
 
 export interface FillRegionCommand extends BaseCommand {
@@ -160,6 +172,27 @@ export interface FillRegionCommand extends BaseCommand {
   /** If null, fills entire layer */
   selection?: Rect | null;
   opacity?: number;
+  point?: Point;
+}
+
+export interface DrawGradientCommand extends BaseCommand {
+  type: 'pixel.gradient';
+  layerId: string;
+  start: Point;
+  end: Point;
+  startColor: Color;
+  endColor: Color;
+  selection?: Rect | null;
+}
+
+export interface DrawShapeCommand extends BaseCommand {
+  type: 'pixel.shape';
+  layerId: string;
+  shapeType: 'rectangle' | 'ellipse';
+  rect: Rect;
+  fillColor: Color;
+  strokeColor?: Color | null;
+  strokeWidth?: number;
 }
 
 export interface PastePixelsCommand extends BaseCommand {
@@ -403,11 +436,15 @@ export type EditorCommand =
   | DuplicateLayerCommand
   | GroupLayersCommand
   | UngroupLayersCommand
+  | MergeDownCommand
   | TransformLayerCommand
   | SetClippingMaskCommand
+  | SetLayerLockedCommand
   // Pixel
   | PaintStrokeCommand
   | FillRegionCommand
+  | DrawGradientCommand
+  | DrawShapeCommand
   | PastePixelsCommand
   // Selection
   | CreateRectSelectionCommand

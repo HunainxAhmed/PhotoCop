@@ -67,6 +67,7 @@ export interface PaintStrokeOptions {
   settings: BrushSettings;
   color: Color;
   eraseMode: boolean;
+  toolMode?: 'brush' | 'pencil' | 'eraser' | 'blur' | 'sharpen' | 'dodge' | 'burn' | 'sponge';
 }
 
 /**
@@ -74,7 +75,7 @@ export interface PaintStrokeOptions {
  * Uses spaced stamp placement along the stroke path.
  */
 export function paintStroke(opts: PaintStrokeOptions): void {
-  const { imageData, points, settings, color, eraseMode } = opts;
+  const { imageData, points, settings, color, eraseMode, toolMode = eraseMode ? 'eraser' : 'brush' } = opts;
   if (points.length === 0) return;
 
   const stamp = generateBrushStamp(settings);
@@ -89,7 +90,7 @@ export function paintStroke(opts: PaintStrokeOptions): void {
   const placeStamp = (p: Point) => {
     const x = Math.round(p.x - stampSize / 2);
     const y = Math.round(p.y - stampSize / 2);
-    applyStamp(imageData, stamp, x, y, color, flowAlpha, eraseMode);
+    applyStamp(imageData, stamp, x, y, color, flowAlpha, eraseMode, toolMode, settings);
   };
 
   placeStamp(prev);
@@ -125,11 +126,14 @@ function applyStamp(
   x: number, y: number,
   color: Color,
   alpha: number,
-  eraseMode: boolean
+  eraseMode: boolean,
+  toolMode: 'brush' | 'pencil' | 'eraser' | 'blur' | 'sharpen' | 'dodge' | 'burn' | 'sponge' = 'brush',
+  settings?: BrushSettings
 ): void {
   const dw = dest.width, dh = dest.height;
   const sw = stamp.width, sh = stamp.height;
   const dd = dest.data, sd = stamp.data;
+  const brushSize = settings?.size ?? 20;
 
   for (let sy = 0; sy < sh; sy++) {
     for (let sx = 0; sx < sw; sx++) {
@@ -139,13 +143,75 @@ function applyStamp(
 
       const si = (sy * sw + sx) * 4;
       const di = (dy * dw + dx) * 4;
-      const stampAlpha = sd[si + 3] / 255; // stamp is grayscale intensity
+      const stampAlpha = sd[si + 3] / 255;
+      if (stampAlpha <= 0) continue;
+      const effectWeight = stampAlpha * alpha;
 
-      if (eraseMode) {
-        dd[di + 3] = Math.max(0, dd[di + 3] - stampAlpha * alpha * 255);
+      if (toolMode === 'eraser' || eraseMode) {
+        dd[di + 3] = Math.max(0, dd[di + 3] - effectWeight * 255);
+      } else if (toolMode === 'blur') {
+        const rad = Math.min(4, Math.max(1, Math.round(brushSize / 8)));
+        let rSum = 0, gSum = 0, bSum = 0, count = 0;
+        for (let ny = Math.max(0, dy - rad); ny <= Math.min(dh - 1, dy + rad); ny++) {
+          for (let nx = Math.max(0, dx - rad); nx <= Math.min(dw - 1, dx + rad); nx++) {
+            const ni = (ny * dw + nx) * 4;
+            rSum += dd[ni];
+            gSum += dd[ni + 1];
+            bSum += dd[ni + 2];
+            count++;
+          }
+        }
+        if (count > 0) {
+          const avgR = rSum / count;
+          const avgG = gSum / count;
+          const avgB = bSum / count;
+          dd[di]     = Math.round(dd[di] * (1 - effectWeight) + avgR * effectWeight);
+          dd[di + 1] = Math.round(dd[di + 1] * (1 - effectWeight) + avgG * effectWeight);
+          dd[di + 2] = Math.round(dd[di + 2] * (1 - effectWeight) + avgB * effectWeight);
+        }
+      } else if (toolMode === 'sharpen') {
+        const rad = Math.min(3, Math.max(1, Math.round(brushSize / 12)));
+        let rSum = 0, gSum = 0, bSum = 0, count = 0;
+        for (let ny = Math.max(0, dy - rad); ny <= Math.min(dh - 1, dy + rad); ny++) {
+          for (let nx = Math.max(0, dx - rad); nx <= Math.min(dw - 1, dx + rad); nx++) {
+            if (nx === dx && ny === dy) continue;
+            const ni = (ny * dw + nx) * 4;
+            rSum += dd[ni];
+            gSum += dd[ni + 1];
+            bSum += dd[ni + 2];
+            count++;
+          }
+        }
+        if (count > 0) {
+          const avgR = rSum / count;
+          const avgG = gSum / count;
+          const avgB = bSum / count;
+          const sharpR = Math.max(0, Math.min(255, Math.round(dd[di] + (dd[di] - avgR) * 2.2)));
+          const sharpG = Math.max(0, Math.min(255, Math.round(dd[di + 1] + (dd[di + 1] - avgG) * 2.2)));
+          const sharpB = Math.max(0, Math.min(255, Math.round(dd[di + 2] + (dd[di + 2] - avgB) * 2.2)));
+          dd[di]     = Math.round(dd[di] * (1 - effectWeight) + sharpR * effectWeight);
+          dd[di + 1] = Math.round(dd[di + 1] * (1 - effectWeight) + sharpG * effectWeight);
+          dd[di + 2] = Math.round(dd[di + 2] * (1 - effectWeight) + sharpB * effectWeight);
+        }
+      } else if (toolMode === 'dodge') {
+        // Brighten
+        dd[di]     = Math.min(255, Math.round(dd[di] + (255 - dd[di]) * effectWeight * 0.75));
+        dd[di + 1] = Math.min(255, Math.round(dd[di + 1] + (255 - dd[di + 1]) * effectWeight * 0.75));
+        dd[di + 2] = Math.min(255, Math.round(dd[di + 2] + (255 - dd[di + 2]) * effectWeight * 0.75));
+      } else if (toolMode === 'burn') {
+        // Darken
+        dd[di]     = Math.max(0, Math.round(dd[di] * (1 - effectWeight * 0.75)));
+        dd[di + 1] = Math.max(0, Math.round(dd[di + 1] * (1 - effectWeight * 0.75)));
+        dd[di + 2] = Math.max(0, Math.round(dd[di + 2] * (1 - effectWeight * 0.75)));
+      } else if (toolMode === 'sponge') {
+        // Desaturate towards grayscale
+        const gray = Math.round(0.299 * dd[di] + 0.587 * dd[di + 1] + 0.114 * dd[di + 2]);
+        dd[di]     = Math.round(dd[di] * (1 - effectWeight) + gray * effectWeight);
+        dd[di + 1] = Math.round(dd[di + 1] * (1 - effectWeight) + gray * effectWeight);
+        dd[di + 2] = Math.round(dd[di + 2] * (1 - effectWeight) + gray * effectWeight);
       } else {
-        // Alpha-blend brush color onto layer
-        const brushAlpha = stampAlpha * alpha;
+        // Standard paint stroke (brush / pencil)
+        const brushAlpha = effectWeight;
         const baseAlpha = dd[di + 3] / 255;
         const outAlpha = brushAlpha + baseAlpha * (1 - brushAlpha);
         if (outAlpha === 0) continue;
@@ -154,6 +220,108 @@ function applyStamp(
         dd[di + 1] = Math.round((color.g * brushAlpha + dd[di + 1] * baseAlpha * (1 - brushAlpha)) / outAlpha);
         dd[di + 2] = Math.round((color.b * brushAlpha + dd[di + 2] * baseAlpha * (1 - brushAlpha)) / outAlpha);
         dd[di + 3] = Math.round(outAlpha * 255);
+      }
+    }
+  }
+}
+
+/**
+ * Render a smooth linear gradient between two points
+ */
+export function renderLinearGradient(
+  imageData: ImageData,
+  start: Point,
+  end: Point,
+  startColor: Color,
+  endColor: Color,
+  bounds?: { x: number; y: number; width: number; height: number } | null
+): void {
+  const { width, height, data } = imageData;
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq === 0) return;
+
+  const minX = bounds ? Math.max(0, Math.floor(bounds.x)) : 0;
+  const minY = bounds ? Math.max(0, Math.floor(bounds.y)) : 0;
+  const maxX = bounds ? Math.min(width, Math.ceil(bounds.x + bounds.width)) : width;
+  const maxY = bounds ? Math.min(height, Math.ceil(bounds.y + bounds.height)) : height;
+
+  for (let y = minY; y < maxY; y++) {
+    for (let x = minX; x < maxX; x++) {
+      // Vector projection t = ((p - start) . d) / |d|^2
+      const t = Math.max(0, Math.min(1, ((x - start.x) * dx + (y - start.y) * dy) / lengthSq));
+      const i = (y * width + x) * 4;
+
+      const r = Math.round(startColor.r + (endColor.r - startColor.r) * t);
+      const g = Math.round(startColor.g + (endColor.g - startColor.g) * t);
+      const b = Math.round(startColor.b + (endColor.b - startColor.b) * t);
+      const a = Math.round(startColor.a + (endColor.a - startColor.a) * t);
+
+      data[i]     = r;
+      data[i + 1] = g;
+      data[i + 2] = b;
+      data[i + 3] = a;
+    }
+  }
+}
+
+/**
+ * Render geometric shapes (rectangle, ellipse) into ImageData
+ */
+export function renderShape(
+  imageData: ImageData,
+  shapeType: 'rectangle' | 'ellipse',
+  rect: { x: number; y: number; width: number; height: number },
+  fillColor: Color,
+  strokeColor?: Color | null,
+  strokeWidth = 0
+): void {
+  const { width, height, data } = imageData;
+  const rx = Math.max(0, Math.floor(rect.x));
+  const ry = Math.max(0, Math.floor(rect.y));
+  const rw = Math.min(width - rx, Math.ceil(rect.width));
+  const rh = Math.min(height - ry, Math.ceil(rect.height));
+  if (rw <= 0 || rh <= 0) return;
+
+  const cx = rect.x + rect.width / 2;
+  const cy = rect.y + rect.height / 2;
+  const radX = rect.width / 2;
+  const radY = rect.height / 2;
+
+  for (let y = ry; y < ry + rh; y++) {
+    for (let x = rx; x < rx + rw; x++) {
+      let isInside = false;
+      let isBorder = false;
+
+      if (shapeType === 'ellipse') {
+        const normX = (x - cx) / radX;
+        const normY = (y - cy) / radY;
+        const distSq = normX * normX + normY * normY;
+        if (distSq <= 1.0) {
+          isInside = true;
+          if (strokeWidth > 0 && strokeColor) {
+            const innerDistSq = ((x - cx) / Math.max(1, radX - strokeWidth)) ** 2 + ((y - cy) / Math.max(1, radY - strokeWidth)) ** 2;
+            if (innerDistSq >= 1.0) isBorder = true;
+          }
+        }
+      } else {
+        // Rectangle
+        isInside = true;
+        if (strokeWidth > 0 && strokeColor) {
+          if (x < rx + strokeWidth || x >= rx + rw - strokeWidth || y < ry + strokeWidth || y >= ry + rh - strokeWidth) {
+            isBorder = true;
+          }
+        }
+      }
+
+      if (isInside) {
+        const i = (y * width + x) * 4;
+        const c = isBorder && strokeColor ? strokeColor : fillColor;
+        data[i]     = c.r;
+        data[i + 1] = c.g;
+        data[i + 2] = c.b;
+        data[i + 3] = c.a;
       }
     }
   }

@@ -307,6 +307,8 @@ export interface HistoryEntry {
   // Snapshot of layers involved for partial undo
   layerSnapshots: Record<string, Layer>;
   selectionSnapshot?: Selection;
+  docSnapshot?: Document;
+  forwardDocSnapshot?: Document;
 }
 
 export interface HistoryState {

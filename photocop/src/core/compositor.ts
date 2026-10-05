@@ -194,6 +194,44 @@ function processAdjustmentLayer(
       }
       break;
     }
+
+    case 'colorBalance': {
+      const { shadows, midtones, highlights, preserveLuminosity } = adj.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+        // Weights: shadows near 0, midtones bell curve around 0.5, highlights near 1
+        const wShadow = Math.max(0, 1 - lum * 2);
+        const wMid = Math.max(0, 1 - Math.abs(lum - 0.5) * 2);
+        const wHigh = Math.max(0, (lum - 0.5) * 2);
+
+        const deltaR = (shadows[0] * wShadow + midtones[0] * wMid + highlights[0] * wHigh) * 1.28;
+        const deltaG = (shadows[1] * wShadow + midtones[1] * wMid + highlights[1] * wHigh) * 1.28;
+        const deltaB = (shadows[2] * wShadow + midtones[2] * wMid + highlights[2] * wHigh) * 1.28;
+
+        let nr = clamp(r + deltaR);
+        let ng = clamp(g + deltaG);
+        let nb = clamp(b + deltaB);
+
+        if (preserveLuminosity) {
+          const newLum = 0.299 * nr + 0.587 * ng + 0.114 * nb;
+          if (newLum > 0.001) {
+            const factor = (lum * 255) / newLum;
+            nr = clamp(nr * factor);
+            ng = clamp(ng * factor);
+            nb = clamp(nb * factor);
+          }
+        }
+
+        data[i]     = nr;
+        data[i + 1] = ng;
+        data[i + 2] = nb;
+      }
+      break;
+    }
   }
 
   return new ImageData(data, imageData.width, imageData.height);
@@ -262,39 +300,138 @@ export function compositeDocument(
   const orderedLayers = getFlatLayerOrder(doc);
   const bottomFirst = [...orderedLayers].reverse();
 
+  // Find set of invisible group IDs to hide all their children
+  const invisibleGroupIds = new Set<string>();
+  for (const layer of orderedLayers) {
+    if (layer.type === 'group' && !layer.visible) {
+      invisibleGroupIds.add(layer.id);
+    }
+  }
+
+  // Set of child layer IDs that belong to invisible groups
+  const hiddenChildIds = new Set<string>();
+  for (const gid of invisibleGroupIds) {
+    const g = doc.layers[gid];
+    if (g?.children) {
+      for (const cid of g.children) hiddenChildIds.add(cid);
+    }
+  }
+
+  let currentBaseCanvas: HTMLCanvasElement | null = null;
+
   for (const layer of bottomFirst) {
-    if (!layer.visible) continue;
+    if (!layer.visible || hiddenChildIds.has(layer.id)) continue;
     if (layer.type === 'group') continue; // groups just provide ordering
 
-    renderLayer(doc, layer, targetCtx, width, height);
+    if (layer.type === 'adjustment') {
+      if (layer.clippingMask) {
+        if (!currentBaseCanvas) continue;
+        // Clipped adjustment layer: only affect base layer silhouette
+        const targetData = targetCtx.getImageData(0, 0, width, height);
+        const adjusted = processAdjustmentLayer(targetData, layer);
+        const baseCtx = currentBaseCanvas.getContext('2d');
+        if (baseCtx) {
+          const baseData = baseCtx.getImageData(0, 0, width, height);
+          for (let i = 0; i < targetData.data.length; i += 4) {
+            const baseAlpha = (baseData.data[i + 3] / 255) * (layer.opacity / 100);
+            if (baseAlpha > 0) {
+              targetData.data[i]     = Math.round(targetData.data[i] * (1 - baseAlpha) + adjusted.data[i] * baseAlpha);
+              targetData.data[i + 1] = Math.round(targetData.data[i + 1] * (1 - baseAlpha) + adjusted.data[i + 1] * baseAlpha);
+              targetData.data[i + 2] = Math.round(targetData.data[i + 2] * (1 - baseAlpha) + adjusted.data[i + 2] * baseAlpha);
+            }
+          }
+          targetCtx.putImageData(targetData, 0, 0);
+        }
+      } else {
+        // Normal adjustment layer: affects full canvas composite so far
+        const currentData = targetCtx.getImageData(0, 0, width, height);
+        const adjusted = processAdjustmentLayer(currentData, layer);
+        targetCtx.putImageData(adjusted, 0, 0);
+      }
+      continue;
+    }
+
+    // Regular layers: pixel, text, fill
+    const layerCanvas = document.createElement('canvas');
+    layerCanvas.width = width;
+    layerCanvas.height = height;
+    const layerCtx = layerCanvas.getContext('2d')!;
+
+    // Render layer content without global alpha or blend mode first
+    renderLayerContent(doc, layer, layerCtx, width, height);
+
+    if (layer.clippingMask) {
+      if (!currentBaseCanvas) {
+        // Base layer is missing/hidden — clipped layer is hidden
+        continue;
+      }
+      // Clip layerCanvas to the base layer's alpha silhouette
+      layerCtx.save();
+      layerCtx.globalCompositeOperation = 'destination-in';
+      layerCtx.drawImage(currentBaseCanvas, 0, 0);
+      layerCtx.restore();
+
+      // Composite onto targetCtx
+      targetCtx.save();
+      targetCtx.globalAlpha = layer.opacity / 100;
+      targetCtx.globalCompositeOperation = blendModeToComposite(layer.blendMode);
+      targetCtx.drawImage(layerCanvas, 0, 0);
+      targetCtx.restore();
+    } else {
+      // Non-clipped layer: becomes new base layer for subsequent clipping masks
+      currentBaseCanvas = layerCanvas;
+
+      // Composite onto targetCtx
+      targetCtx.save();
+      targetCtx.globalAlpha = layer.opacity / 100;
+      targetCtx.globalCompositeOperation = blendModeToComposite(layer.blendMode);
+      targetCtx.drawImage(layerCanvas, 0, 0);
+      targetCtx.restore();
+    }
   }
 }
 
-function renderLayer(
-  _doc: Document,
+/** Render a single layer with its blend mode and opacity applied directly to ctx */
+export function renderLayer(
+  doc: Document,
   layer: Layer,
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   docWidth: number,
   docHeight: number
 ): void {
-  const opacity = layer.opacity / 100;
-
-  // Handle adjustment layers
   if (layer.type === 'adjustment') {
-    // Get current composite state
     const currentData = ctx.getImageData(0, 0, docWidth, docHeight);
     const adjusted = processAdjustmentLayer(currentData, layer);
     ctx.putImageData(adjusted, 0, 0);
     return;
   }
 
+  const layerCanvas = document.createElement('canvas');
+  layerCanvas.width = docWidth;
+  layerCanvas.height = docHeight;
+  const layerCtx = layerCanvas.getContext('2d')!;
+  renderLayerContent(doc, layer, layerCtx, docWidth, docHeight);
+
+  ctx.save();
+  ctx.globalAlpha = layer.opacity / 100;
+  ctx.globalCompositeOperation = blendModeToComposite(layer.blendMode);
+  ctx.drawImage(layerCanvas, 0, 0);
+  ctx.restore();
+}
+
+/** Render layer raw content into ctx at 100% opacity, standard source-over */
+function renderLayerContent(
+  _doc: Document,
+  layer: Layer,
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  docWidth: number,
+  docHeight: number
+): void {
   // Handle fill layers
   if (layer.type === 'fill' && layer.fillColor) {
     const fc = layer.fillColor;
     ctx.save();
-    ctx.globalAlpha = opacity * (fc.a / 255);
-    ctx.globalCompositeOperation = blendModeToComposite(layer.blendMode);
-    ctx.fillStyle = `rgb(${fc.r},${fc.g},${fc.b})`;
+    ctx.fillStyle = `rgba(${fc.r},${fc.g},${fc.b},${fc.a / 255})`;
     ctx.fillRect(0, 0, docWidth, docHeight);
     ctx.restore();
     return;
@@ -310,12 +447,17 @@ function renderLayer(
     offscreen.height = docHeight;
     const offCtx = offscreen.getContext('2d')!;
 
+    const imgCanvas = document.createElement('canvas');
+    imgCanvas.width = imageData.width;
+    imgCanvas.height = imageData.height;
+    imgCanvas.getContext('2d')!.putImageData(imageData, 0, 0);
+
     offCtx.save();
     offCtx.translate(transform.x + imageData.width / 2, transform.y + imageData.height / 2);
     offCtx.rotate((transform.rotation * Math.PI) / 180);
     offCtx.scale(transform.scaleX, transform.scaleY);
     offCtx.translate(-imageData.width / 2, -imageData.height / 2);
-    offCtx.putImageData(imageData, 0, 0);
+    offCtx.drawImage(imgCanvas, 0, 0);
     offCtx.restore();
 
     // Apply mask if present
@@ -328,12 +470,19 @@ function renderLayer(
       const maskImageData = new ImageData(docWidth, docHeight);
       const src = mask.imageData.data;
       const dst = maskImageData.data;
-      for (let i = 0; i < dst.length; i += 4) {
-        const mi = Math.floor(i / 4);
-        const maskSrcIdx = mi < src.length / 4 ? mi * 4 : 0;
-        const v = mask.inverted ? 255 - src[maskSrcIdx] : src[maskSrcIdx];
-        dst[i] = dst[i + 1] = dst[i + 2] = 255;
-        dst[i + 3] = v;
+      const mw = mask.imageData.width;
+      const mh = mask.imageData.height;
+      for (let y = 0; y < docHeight; y++) {
+        for (let x = 0; x < docWidth; x++) {
+          const di = (y * docWidth + x) * 4;
+          let v = 255;
+          if (x < mw && y < mh) {
+            const si = (y * mw + x) * 4;
+            v = mask.inverted ? 255 - src[si] : src[si];
+          }
+          dst[di] = dst[di + 1] = dst[di + 2] = 255;
+          dst[di + 3] = v;
+        }
       }
       maskCtx.putImageData(maskImageData, 0, 0);
 
@@ -341,12 +490,8 @@ function renderLayer(
       offCtx.drawImage(maskCanvas, 0, 0);
     }
 
-    // Composite onto main canvas
-    ctx.save();
-    ctx.globalAlpha = opacity;
-    ctx.globalCompositeOperation = blendModeToComposite(layer.blendMode);
     ctx.drawImage(offscreen, 0, 0);
-    ctx.restore();
+    return;
   }
 
   // Handle text layers
@@ -354,8 +499,6 @@ function renderLayer(
     const { textData, transform } = layer;
     const { style, content } = textData;
     ctx.save();
-    ctx.globalAlpha = opacity;
-    ctx.globalCompositeOperation = blendModeToComposite(layer.blendMode);
     ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize}px "${style.fontFamily}", sans-serif`;
     ctx.fillStyle = `rgba(${style.color.r},${style.color.g},${style.color.b},${style.color.a / 255})`;
     ctx.textAlign = style.textAlign as CanvasTextAlign;
@@ -373,7 +516,7 @@ function renderLayer(
 
 // ─── CSS Composite Operation Mapping ─────────────────────────────────────────
 
-function blendModeToComposite(mode: BlendMode): GlobalCompositeOperation {
+export function blendModeToComposite(mode: BlendMode): GlobalCompositeOperation {
   const map: Partial<Record<BlendMode, GlobalCompositeOperation>> = {
     Normal: 'source-over',
     Multiply: 'multiply',

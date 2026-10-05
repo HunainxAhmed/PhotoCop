@@ -17,21 +17,23 @@ import { AIPanel } from './components/AIPanel';
 import { MenuBar } from './components/MenuBar';
 import { StatusBar } from './components/StatusBar';
 import { PerformanceMonitor } from './components/PerformanceMonitor';
+import { AdjustmentsModal } from './components/AdjustmentsModal';
 import { useEditorStore } from './store/editorStore';
 
 // ─── Panel Tab System ─────────────────────────────────────────────────────────
 
-type RightPanelTab = 'layers' | 'properties' | 'history' | 'ai';
+type RightPanelTab = 'layers' | 'properties' | 'adjustments' | 'history' | 'ai';
 
 const RightPanelTabs: React.FC<{
   active: RightPanelTab;
   onChange: (t: RightPanelTab) => void;
 }> = ({ active, onChange }) => {
   const tabs: { id: RightPanelTab; label: string }[] = [
-    { id: 'layers',     label: 'Layers' },
-    { id: 'properties', label: 'Properties' },
-    { id: 'history',    label: 'History' },
-    { id: 'ai',         label: '✦ AI' },
+    { id: 'layers',      label: 'Layers' },
+    { id: 'properties',  label: 'Props' },
+    { id: 'adjustments', label: 'Color' },
+    { id: 'history',     label: 'History' },
+    { id: 'ai',          label: '✦ AI' },
   ];
 
   return (
@@ -162,6 +164,14 @@ export default function App() {
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const hasDoc = useEditorStore(s => Boolean(s.document));
   const loadImageFromFile = useEditorStore(s => s.loadImageFromFile);
+  const activeAdjustmentModal = useEditorStore(s => s.activeAdjustmentModal);
+  const closeAdjustmentModal = useEditorStore(s => s.closeAdjustmentModal);
+
+  // ─── Restore saved session on mount ──────────────────────────────────────────
+
+  useEffect(() => {
+    useEditorStore.getState().initProjectStorage();
+  }, []);
 
   // ─── Canvas resize observer ──────────────────────────────────────────────────
 
@@ -215,6 +225,9 @@ export default function App() {
       if (ctrl && e.key === 'n') { e.preventDefault(); setShowNewDoc(true); return; }
       if (ctrl && e.key === 'a') { e.preventDefault(); store.dispatch({ type: 'selection.select_all', source: 'user' }); return; }
       if (ctrl && e.key === 'd') { e.preventDefault(); store.dispatch({ type: 'selection.deselect', source: 'user' }); return; }
+      if (ctrl && (e.key === 'u' || e.key === 'U')) { e.preventDefault(); store.openAdjustmentModal('hueSat'); return; }
+      if (ctrl && (e.key === 'b' || e.key === 'B')) { e.preventDefault(); store.openAdjustmentModal('colorBalance'); return; }
+      if (ctrl && (e.key === 'l' || e.key === 'L')) { e.preventDefault(); store.openAdjustmentModal('levels'); return; }
       if (ctrl && e.key === '=') { e.preventDefault(); store.dispatch({ type: 'viewport.set_zoom', zoom: store.viewport.zoom * 1.5, source: 'user' }); return; }
       if (ctrl && e.key === '-') { e.preventDefault(); store.dispatch({ type: 'viewport.set_zoom', zoom: store.viewport.zoom / 1.5, source: 'user' }); return; }
       if (ctrl && e.key === '0') {
@@ -314,18 +327,21 @@ export default function App() {
 
           {/* New doc CTA when empty */}
           {!hasDoc && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="text-center pointer-events-auto">
-                <div className="text-6xl mb-4">⚡</div>
-                <div className="text-2xl font-bold text-neutral-400 mb-2">PhotoCop</div>
-                <div className="text-neutral-600 text-sm mb-6">AI-Native Professional Image Editor</div>
-                <div className="flex gap-3 justify-center">
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-neutral-900/85">
+              <div className="text-center pointer-events-auto max-w-sm px-7 py-8 rounded-xl bg-neutral-850/95 border border-neutral-700 shadow-2xl backdrop-blur-md">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-blue-600/15 text-blue-400 mb-4 border border-blue-500/25 shadow-inner">
+                  <span className="text-2xl font-bold font-sans">P</span>
+                </div>
+                <h1 className="text-lg font-bold text-white mb-1 tracking-tight">PhotoCop Studio</h1>
+                <p className="text-neutral-400 text-xs mb-6 leading-relaxed">
+                  Professional creative image editor with non-destructive layers, color grading, and AI tools.
+                </p>
+                <div className="flex gap-2.5 justify-center">
                   <button
                     onClick={() => setShowNewDoc(true)}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg
-                      font-medium transition-colors shadow-lg"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-md font-semibold transition-all shadow-md shadow-blue-600/25"
                   >
-                    New Document
+                    + New Project
                   </button>
                   <button
                     onClick={() => {
@@ -338,13 +354,12 @@ export default function App() {
                       };
                       input.click();
                     }}
-                    className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 text-neutral-200 text-sm
-                      rounded-lg font-medium transition-colors"
+                    className="px-4 py-2 bg-neutral-750 hover:bg-neutral-700 text-neutral-200 text-xs rounded-md font-medium transition-colors border border-neutral-650"
                   >
                     Open Image
                   </button>
                 </div>
-                <div className="text-neutral-700 text-xs mt-4">or drag and drop an image here</div>
+                <div className="text-neutral-500 text-[11px] mt-4 font-mono">or drag and drop images anywhere</div>
               </div>
             </div>
           )}
@@ -354,10 +369,11 @@ export default function App() {
         <div className="w-72 flex flex-col border-l border-neutral-700 shrink-0 bg-neutral-800">
           <RightPanelTabs active={rightPanel} onChange={setRightPanel} />
           <div className="flex-1 overflow-hidden">
-            {rightPanel === 'layers'     && <LayersPanel />}
-            {rightPanel === 'properties' && <PropertiesPanel />}
-            {rightPanel === 'history'    && <HistoryPanel />}
-            {rightPanel === 'ai'         && <AIPanel />}
+            {rightPanel === 'layers'      && <LayersPanel />}
+            {rightPanel === 'properties'  && <PropertiesPanel />}
+            {rightPanel === 'adjustments' && <ColorGradingSidebar />}
+            {rightPanel === 'history'     && <HistoryPanel />}
+            {rightPanel === 'ai'          && <AIPanel />}
           </div>
         </div>
       </div>
@@ -367,6 +383,75 @@ export default function App() {
 
       {/* New document modal */}
       {showNewDoc && <NewDocumentDialog onClose={() => setShowNewDoc(false)} />}
+
+      {/* Adjustments & Color Grading Modal */}
+      {activeAdjustmentModal && (
+        <AdjustmentsModal
+          isOpen={true}
+          initialTab={activeAdjustmentModal}
+          onClose={closeAdjustmentModal}
+        />
+      )}
     </div>
   );
 }
+
+// ─── Color Grading Sidebar ───────────────────────────────────────────────────
+
+const ColorGradingSidebar: React.FC = () => {
+  const store = useEditorStore();
+  const hasDoc = Boolean(store.document);
+
+  return (
+    <div className="flex flex-col h-full bg-neutral-800 p-3 overflow-y-auto space-y-4">
+      <div className="text-xs font-semibold text-neutral-200 uppercase tracking-wider pb-1 border-b border-neutral-700">
+        Color & Grading
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-[11px] text-neutral-400 font-medium">Quick Adjustments</label>
+        <div className="grid grid-cols-2 gap-1.5">
+          <button
+            disabled={!hasDoc}
+            onClick={() => store.openAdjustmentModal('hueSat')}
+            className="p-2 rounded bg-neutral-700 hover:bg-neutral-600 disabled:opacity-40 text-xs text-left text-neutral-200 transition-colors"
+          >
+            Hue / Saturation
+          </button>
+          <button
+            disabled={!hasDoc}
+            onClick={() => store.openAdjustmentModal('brightContrast')}
+            className="p-2 rounded bg-neutral-700 hover:bg-neutral-600 disabled:opacity-40 text-xs text-left text-neutral-200 transition-colors"
+          >
+            Brightness / Contrast
+          </button>
+          <button
+            disabled={!hasDoc}
+            onClick={() => store.openAdjustmentModal('colorBalance')}
+            className="p-2 rounded bg-neutral-700 hover:bg-neutral-600 disabled:opacity-40 text-xs text-left text-neutral-200 transition-colors"
+          >
+            Color Balance
+          </button>
+          <button
+            disabled={!hasDoc}
+            onClick={() => store.openAdjustmentModal('levels')}
+            className="p-2 rounded bg-neutral-700 hover:bg-neutral-600 disabled:opacity-40 text-xs text-left text-neutral-200 transition-colors"
+          >
+            Levels
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-[11px] text-neutral-400 font-medium">Creative Presets</label>
+        <button
+          disabled={!hasDoc}
+          onClick={() => store.openAdjustmentModal('presets')}
+          className="w-full py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded text-xs font-medium shadow transition-all"
+        >
+          Open Preset Gallery
+        </button>
+      </div>
+    </div>
+  );
+};

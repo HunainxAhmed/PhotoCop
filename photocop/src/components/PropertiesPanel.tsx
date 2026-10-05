@@ -347,6 +347,134 @@ const LayerTransformControls: React.FC<{ layer: Layer }> = ({ layer }) => {
   );
 };
 
+// ─── Text Layer Controls ─────────────────────────────────────────────────────
+
+const TextLayerControls: React.FC<{ layer: Layer }> = ({ layer }) => {
+  const dispatch = useEditorStore(s => s.dispatch);
+  const textData = layer.textData;
+  if (!textData) return null;
+
+  const style = textData.style;
+
+  const updateText = (updates: Partial<typeof textData.style>, newContent?: string) => {
+    dispatch({
+      type: 'text.edit',
+      layerId: layer.id,
+      textData: {
+        content: newContent ?? textData.content,
+        style: { ...style, ...updates },
+      },
+      source: 'user',
+    });
+  };
+
+  return (
+    <div className="px-3 py-2 space-y-3">
+      {/* Content Textarea */}
+      <div>
+        <label className="text-[10px] text-neutral-400 block mb-1">Text Content</label>
+        <textarea
+          rows={2}
+          value={textData.content}
+          onChange={e => updateText({}, e.target.value)}
+          className="w-full bg-neutral-700 border border-neutral-600 rounded px-2 py-1 text-xs text-white resize-none focus:outline-none focus:border-blue-500 font-sans"
+        />
+      </div>
+
+      {/* Font Size Slider & Input */}
+      <div>
+        <div className="flex justify-between text-[10px] text-neutral-400 mb-1">
+          <span>Font Size</span>
+          <span className="text-white font-mono">{style.fontSize} px</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="range"
+            min={8}
+            max={500}
+            value={style.fontSize}
+            onChange={e => updateText({ fontSize: Number(e.target.value), lineHeight: Math.round(Number(e.target.value) * 1.25) })}
+            className="flex-1 h-1 accent-blue-500 cursor-pointer"
+          />
+          <input
+            type="number"
+            min={8}
+            max={500}
+            value={style.fontSize}
+            onChange={e => updateText({ fontSize: Math.max(8, Number(e.target.value)), lineHeight: Math.round(Number(e.target.value) * 1.25) })}
+            className="w-14 bg-neutral-700 border border-neutral-600 rounded px-1.5 py-0.5 text-xs text-white text-right"
+          />
+        </div>
+      </div>
+
+      {/* Font Family */}
+      <div>
+        <label className="text-[10px] text-neutral-400 block mb-1">Font Family</label>
+        <select
+          value={style.fontFamily}
+          onChange={e => updateText({ fontFamily: e.target.value })}
+          className="w-full bg-neutral-700 border border-neutral-600 rounded px-2 py-1 text-xs text-white focus:outline-none"
+        >
+          <option value="Inter, sans-serif">Inter</option>
+          <option value="Arial, sans-serif">Arial</option>
+          <option value="Helvetica, sans-serif">Helvetica</option>
+          <option value="'Times New Roman', serif">Times New Roman</option>
+          <option value="Georgia, serif">Georgia</option>
+          <option value="'Courier New', monospace">Courier New</option>
+          <option value="Impact, sans-serif">Impact</option>
+          <option value="Trebuchet MS, sans-serif">Trebuchet MS</option>
+        </select>
+      </div>
+
+      {/* Font Weight & Style */}
+      <div className="flex gap-2">
+        <div className="flex-1">
+          <label className="text-[10px] text-neutral-400 block mb-1">Weight</label>
+          <select
+            value={style.fontWeight}
+            onChange={e => updateText({ fontWeight: Number(e.target.value) })}
+            className="w-full bg-neutral-700 border border-neutral-600 rounded px-2 py-1 text-xs text-white focus:outline-none"
+          >
+            <option value={400}>Regular (400)</option>
+            <option value={500}>Medium (500)</option>
+            <option value={600}>Semi-Bold (600)</option>
+            <option value={700}>Bold (700)</option>
+          </select>
+        </div>
+        <div className="flex-1">
+          <label className="text-[10px] text-neutral-400 block mb-1">Style</label>
+          <select
+            value={style.fontStyle}
+            onChange={e => updateText({ fontStyle: e.target.value as any })}
+            className="w-full bg-neutral-700 border border-neutral-600 rounded px-2 py-1 text-xs text-white focus:outline-none"
+          >
+            <option value="normal">Normal</option>
+            <option value="italic">Italic</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Alignment */}
+      <div>
+        <label className="text-[10px] text-neutral-400 block mb-1">Alignment</label>
+        <div className="grid grid-cols-3 gap-1 bg-neutral-700 p-0.5 rounded border border-neutral-600">
+          {(['left', 'center', 'right'] as const).map(align => (
+            <button
+              key={align}
+              onClick={() => updateText({ textAlign: align })}
+              className={`py-1 text-xs rounded capitalize transition-colors ${
+                style.textAlign === align ? 'bg-blue-600 text-white font-medium' : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              {align}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Main Properties Panel ────────────────────────────────────────────────────
 
 export const PropertiesPanel: React.FC = () => {
@@ -372,6 +500,13 @@ export const PropertiesPanel: React.FC = () => {
             <section>
               <SectionHeader>Transform</SectionHeader>
               <LayerTransformControls layer={activeLayer} />
+            </section>
+          )}
+
+          {activeLayer.type === 'text' && (
+            <section>
+              <SectionHeader>Character & Paragraph</SectionHeader>
+              <TextLayerControls layer={activeLayer} />
             </section>
           )}
 
